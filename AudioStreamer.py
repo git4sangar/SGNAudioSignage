@@ -10,8 +10,8 @@ import socket
 
 gPlayList = []
 gPListLock = RLock()
-#gPathPrefix = "/home/pi/audio_streamer/"
-gPathPrefix = "/home/tstone10/sgn/smpls/py/"
+#gPathPrefix = "/home/pi/sgn/sangar/audio_streamer/"
+gPathPrefix = "/home/gubuntu/sgn/smpls/py/SGNAudioSignage/audio/"
 
 class Utils(object):
 	@staticmethod
@@ -59,7 +59,7 @@ class Utils(object):
 class Player(object):
 	def play(self, file_name, duration_mins):
 		duration_secs	= duration_mins * 60
-		pid = subprocess.Popen("omxplayer -o local {0}".format(file_name))
+		pid = subprocess.Popen("omxplayer -o local {0}".format(gPathPrefix + file_name))
 		#pid = subprocess.Popen("/home/tstone10/sgn/smpls/py/noend")
 		while duration_secs > 0:
 			if pid.poll() != None:	# finished playing?, then play again
@@ -84,7 +84,8 @@ class Player(object):
 						loop = len(gPlayList) - 1	# if so, pick the next greatest play item
 					playItem = gPlayList[loop]
 
-			if playItem:
+			# Password is serialized for "cmd" == "change_password". so skip if the "cmd" is not "add"
+			if playItem and playItem["cmd"] == "add":
 				#Check if right time to play
 				playTime	= datetime.time(playItem["hour"], playItem["min"], 0)
 				curHour		= datetime.datetime.now().hour
@@ -109,6 +110,7 @@ class FileReader(object):
 		self.isSanityOk		= False
 		self.bytesRead		= 0
 		self.clientIP		= ''
+		self.password		= "SGN"
 		self.oneChunk		= 1024 * 16	#max UDP payload is 16K
 
 		#	Deserialize
@@ -120,6 +122,9 @@ class FileReader(object):
 				print("Playlist till now {0}" .format(playListJson))
 				with gPListLock:
 					gPlayList	= json.loads(playListJson)
+					for playItem in gPlayList:
+						if playItem["cmd"] == "change_password":
+							self.password = playItem["new_password"]
 		except IOError:
 			print("Could not open Playlist file")
 
@@ -131,7 +136,6 @@ class FileReader(object):
 				if playItem["name"] == play_item_name:
 					gPlayList.remove(playItem)
 					isRemoved = True
-					self.serialize_play_list()
 					break
 		return isRemoved
 
@@ -153,6 +157,15 @@ class FileReader(object):
 		with gPListLock:
 			gPlayList.append(playItem)
 
+	def get_play_list_json(self):
+		global gPlayList, gPListLock
+		playList = []
+		with gPListLock:
+			for playItem in gPlayList:
+				if playItem["name"] != "password":
+					playList.append(playItem)
+		return json.dumps(playList)
+
 	def serialize_play_list(self):
 		global gPlayList, gPListLock
 		with gPListLock:
@@ -163,16 +176,41 @@ class FileReader(object):
 		playListFp.close()
 
 	def parse_packet(self, pkt):
-		global gPlayList, gPListLock
 		if self.fileSize == 0:
 			print("Got packet {0}".format(pkt.decode()))
 			playItem	= json.loads(pkt.decode())
-			
+
+			if "cmd" not in playItem.keys() or "password" not in playItem.keys():
+				pkt = "Invalid Input: command or password missing"
+				print(pkt)
+				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
+				return
+
+			# in case if you forget the password
+			if playItem["cmd"] == "get_password" :
+				print("Sending current password")
+				Utils.send_packet(self.clientIP, self.udp_tx_port, self.password.encode())
+
+			if playItem["password"] != self.password:
+				pkt = "Invalid password"
+				print(pkt)
+				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
+				return
+
+			if playItem["cmd"] == "change_password":
+				self.remove_play_item(playItem["name"])
+				self.password	= playItem["new_password"]
+				self.add_play_item(playItem)
+				self.serialize_play_list()
+				pkt = "Password changed successfully"
+				print(pkt)
+				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
+
 			if playItem["cmd"] == "add":
 				# add - cmd is always followed by a series of packets containing the audio file
 				# so set the following variables eventhough the sanity check fails
 				self.fileSize	= playItem["file_size"]
-				self.fileName	= gPathPrefix + playItem["file_name"]
+				self.fileName	= playItem["file_name"]
 				self.bytesRead	= 0
 
 				self.isSanityOk = self.sanity_check(playItem)
@@ -182,18 +220,20 @@ class FileReader(object):
 					pkt = "added to playlist"
 				else:
 					pkt = "sanity check failed"
+				print(pkt)
 				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
 
 			if playItem["cmd"] == "remove":
 				if self.remove_play_item(playItem["name"]):
+					self.serialize_play_list()
 					pkt = "removed from playlist"
 				else:
 					pkt = "Item '{0}' not found".format(playItem["name"])
+				print(pkt)
 				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
 
-			if playItem["cmd"] == "add_client_ip":
-				self.clientIP = playItem["client_ip"]
-				pkt = "client ip added"
+			if playItem["cmd"] == "get_play_list":
+				pkt = self.get_play_list_json()
 				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
 
 			if playItem["cmd"] == "get_ip":
@@ -210,6 +250,7 @@ class FileReader(object):
 				self.fileSize	= 0
 				self.bytesRead	= 0
 				pkt = "got the audio file"
+				print(pkt)
 				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
 
 	def receive_packets(self):

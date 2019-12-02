@@ -15,7 +15,9 @@ class FileSender(object):
 
 	def pack_meta_data(self, start_hour, start_min, duration):
 		myDict	= {}
-		myDict["cmd"]	= "remove"
+		myDict["password"] = "SGN"
+		myDict["cmd"]	= "get_play_list"
+		myDict["new_password"] = "SGN"
 		myDict["name"]	= "Coffee Break"
 		myDict["hour"]	= start_hour
 		myDict["min"]	= start_min
@@ -85,4 +87,3 @@ if __name__ == "__main__":
 		sleep(0.01)
 	print("Sent {0} chunks of toal size {1}".format(chunks_read, bytes_read))
 '''
-

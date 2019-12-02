@@ -1,0 +1,43 @@
+sgn
+
+
+To Change Password
+
+	playItem["password"]	= "current password"
+	playItem["cmd"]		= "change_password"
+	playItem["name"]	= "password"
+	playItem["new_password"]= "new password"
+
+
+
+
+To Add to a playlist
+
+	Two consecutive packets necessary
+	Packet-1
+		playItem["password"]	= "current_password"
+		playItem["cmd"]		= "add"
+		playItem["name"]	= name of the break like coffee break, tea break
+		playItem["file_size"]	= size in bytes
+		playItem["file_name"]	= mp3 file name
+		playItem["hour"]	= 0 - 23
+		playItem["min"]		= 0 - 59
+		playItem["duration"]	= number of mins to play
+
+	Packet - 2
+		content of the audio file
+
+
+
+
+To Remove from a playlist
+
+	playItem["password"]	= "current_password"
+	playItem["cmd"]		= "remove"
+	playItem["name"]	= name of the break like coffee break, tea break
+
+
+To get all the playlists
+
+	playItem["password"]	= "current_password"
+	playItem["cmd"]		= "get_play_list"
