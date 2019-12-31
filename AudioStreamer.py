@@ -13,8 +13,8 @@ import netifaces
 
 gPlayList = []
 gPListLock = RLock()
-gPathPrefix = "/home/pi/sgn/projs/SGNAudioSignage/"
-#gPathPrefix = "/home/gubuntu/sgn/smpls/py/SGNAudioSignage/audio/"
+#gPathPrefix = "/home/pi/sgn/projs/SGNAudioSignage/"
+gPathPrefix = "/home/tstone10/sgn/smpls/py/SGNAudioSignage/audio/"
 
 class Utils(object):
 	udp_tx_port = 4952
@@ -38,7 +38,7 @@ class Utils(object):
 	def send_packet(toip, port, pkt):
 		sent	= 0
 		sock_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		dest    = (toip, int(udp_tx_port))
+		dest    = (toip, int(Utils.udp_tx_port))
 		#print("Sending pkt to {0}".format(pkt))
 		try:
 			sent = sock_tx.sendto(pkt, dest)
@@ -50,7 +50,7 @@ class Utils(object):
 
 	@staticmethod
 	def get_ip():
-		pkt = netifaces.ifaddresses('eth0')[2][0]['addr']
+		pkt = netifaces.ifaddresses('wlp2s0')[2][0]['addr']
 		return pkt
 
 	@staticmethod
@@ -68,12 +68,13 @@ class Utils(object):
 
 class Player(object):
 	def play(self, file_name, duration_mins):
+		global gPathPrefix
 		duration_secs	= duration_mins * 60
 		pid = subprocess.Popen("omxplayer -o local {0}".format(gPathPrefix + file_name))
 		#pid = subprocess.Popen("/home/tstone10/sgn/smpls/py/noend")
 		while duration_secs > 0:
 			if pid.poll() != None:	# finished playing?, then play again
-				pid = subprocess.Popen("omxplayer -o local {0}".format(file_name))
+				pid = subprocess.Popen("omxplayer -o local {0}".format(gPathPrefix + file_name))
 				#pid = subprocess.Popen("/home/tstone10/sgn/smpls/py/noend")
 				print("Play it again as remaining duration is {0} sec(s)".format(duration_secs))
 			sleep(1)
@@ -177,7 +178,6 @@ class FileReader(object):
 				t2End	= Utils.get_secs(0, item["duration"], 0)
 				if Utils.is_overlapped(t1Start, t1End, t2Start, t2End):
 					return item, False
-
 		return toRemove, True
 
 	def add_play_item(self, playItem):
