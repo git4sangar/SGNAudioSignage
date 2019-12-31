@@ -17,6 +17,7 @@ class FileSender(object):
 		myDict	= {}
 		myDict["password"] = "SGN"
 		myDict["cmd"]	= "get_play_list"
+		'''
 		myDict["new_password"] = "SGN"
 		myDict["name"]	= "Coffee Break"
 		myDict["hour"]	= start_hour
@@ -24,6 +25,7 @@ class FileSender(object):
 		myDict["duration"] = duration
 		myDict["file_name"] = self.file_name + "_read"
 		myDict["file_size"] = self.file_size
+		'''
 		return json.dumps(myDict)
 
 	def pack_file(self, offset):
@@ -70,7 +72,7 @@ if __name__ == "__main__":
 	read_thread	= Thread(target = receive_packets)
 	read_thread.start()
 
-	file_sender	= FileSender("audio_file_01.mp3")
+	file_sender	= FileSender("./audio/audio_file_01.mp3")
 	meta_data_json	= file_sender.pack_meta_data(10, 30, 60)
 	print(meta_data_json)
 	bytes_sent	= file_sender.send_packet(get_ip(), meta_data_json.encode())

@@ -3,17 +3,21 @@
 import subprocess
 from time import sleep
 import datetime
+import os.path
+from os import path
 from threading import Thread, Lock, RLock
 import csv
 import json
 import socket
+import netifaces
 
 gPlayList = []
 gPListLock = RLock()
-#gPathPrefix = "/home/pi/sgn/sangar/audio_streamer/"
-gPathPrefix = "/home/gubuntu/sgn/smpls/py/SGNAudioSignage/audio/"
+gPathPrefix = "/home/pi/sgn/projs/SGNAudioSignage/"
+#gPathPrefix = "/home/gubuntu/sgn/smpls/py/SGNAudioSignage/audio/"
 
 class Utils(object):
+	udp_tx_port = 4952
 	@staticmethod
 	def get_secs(hour, mins, secs):
 		ret = hour * 60 * 60
@@ -23,6 +27,7 @@ class Utils(object):
 
 	@staticmethod
 	def is_overlapped(t1Start, t1End, t2Start, t2End):
+		# Check if t2's start is within t1's play range or vice versa
 		if t1Start <= t2Start and t1End >= t2Start:
 			return True
 		if t2Start <= t1Start and t2End >= t1Start:
@@ -33,8 +38,8 @@ class Utils(object):
 	def send_packet(toip, port, pkt):
 		sent	= 0
 		sock_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		dest    = (toip, int(port))
-		#print("Sending pkt to {0}".format(toip))
+		dest    = (toip, int(udp_tx_port))
+		#print("Sending pkt to {0}".format(pkt))
 		try:
 			sent = sock_tx.sendto(pkt, dest)
 		except socket.error as e:
@@ -45,6 +50,11 @@ class Utils(object):
 
 	@staticmethod
 	def get_ip():
+		pkt = netifaces.ifaddresses('eth0')[2][0]['addr']
+		return pkt
+
+	@staticmethod
+	def get_ip_obsolete():
 		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		try:
 			# doesn't even have to be reachable
@@ -81,7 +91,7 @@ class Player(object):
 			with gPListLock:
 				if len(gPlayList) > 0:
 					if len(gPlayList) <= loop:		# is loop pointing to non-existent index?
-						loop = len(gPlayList) - 1	# if so, pick the next greatest play item
+						loop = 0			# if so, start from scratch
 					playItem = gPlayList[loop]
 
 			# Password is serialized for "cmd" == "change_password". so skip if the "cmd" is not "add"
@@ -94,23 +104,23 @@ class Player(object):
 				if playTime == curTime:
 					self.play(playItem["file_name"], playItem["duration"])
 					#print("playing {0} for duration {1}".format(playItem["file_name"], playItem["duration"]))
-				playItem = {}	# who knows, this palyItem would've been removed. so make it empty
+				playItem = {}	# who knows, this palyItem would've been removed by this time. so make it empty
 
 			loop = loop + 1
 			sleep(1) #sleep for a second
 
 class FileReader(object):
-	def __init__(self, plist_file_name = "playlist_file.json", udp_rx_port = 4953, udp_tx_port = 4952):
+	def __init__(self, plist_file_name = "playlist_file.json", udp_file_port = 4950, udp_rx_port = 4953, udp_tx_port = 4952):
 		global gPlayList, gPListLock
 		self.udp_rx_port	= udp_rx_port
 		self.udp_tx_port	= udp_tx_port
+		self.udp_file_port	= udp_file_port
 		self.plist_file_name	= plist_file_name
 		self.fileSize		= 0
-		self.fileName		= "sgn.mp3"
-		self.isSanityOk		= False
-		self.bytesRead		= 0
+		self.isNoConflict	= False
 		self.clientIP		= ''
-		self.password		= "SGN"
+		self.password		= "GuruGuha"
+		self.id			= 0
 		self.oneChunk		= 1024 * 16	#max UDP payload is 16K
 
 		#	Deserialize
@@ -123,48 +133,66 @@ class FileReader(object):
 				with gPListLock:
 					gPlayList	= json.loads(playListJson)
 					for playItem in gPlayList:
-						if playItem["cmd"] == "change_password":
+						if playItem["name"] == "password":
 							self.password = playItem["new_password"]
+						if playItem["id"] > self.id:
+							self.id = playItem["id"]
 		except IOError:
 			print("Could not open Playlist file")
 
-	def remove_play_item(self, play_item_name):
+	def delete_play_item(self, playItem):
+		global gPlayList, gPListLock
+		with gPListLock:
+			gPlayList.remove(playItem)
+
+	def remove_play_item_by_id(self, play_item_id):
 		global gPlayList, gPListLock
 		isRemoved = False
 		with gPListLock:
 			for playItem in gPlayList:
-				if playItem["name"] == play_item_name:
+				if playItem["id"] == play_item_id:
 					gPlayList.remove(playItem)
 					isRemoved = True
+					self.serialize_play_list()
 					break
 		return isRemoved
 
-	def sanity_check(self, playItem):
+	def conflict_check(self, playItem):
 		global gPlayList, gPListLock
+		toRemove = {}
 		with gPListLock:
 			for item in gPlayList:
+				if item["name"] == "password":
+					continue
+				if item["id"] == playItem["id"]:
+					toRemove = item
+					continue
+
+				if item["name"] == playItem["name"]:
+					return item, False
 				t1Start	= Utils.get_secs(playItem["hour"], playItem["min"], 0)
 				t1End	= t1Start + Utils.get_secs(0, playItem["duration"], 0)
 
 				t2Start = Utils.get_secs(item["hour"], item["min"], 0)
 				t2End	= Utils.get_secs(0, item["duration"], 0)
-				if item["name"] == playItem["name"] or Utils.is_overlapped(t1Start, t1End, t2Start, t2End):
-					return False;
-		return True
+				if Utils.is_overlapped(t1Start, t1End, t2Start, t2End):
+					return item, False
+
+		return toRemove, True
 
 	def add_play_item(self, playItem):
 		global gPlayList, gPListLock
 		with gPListLock:
 			gPlayList.append(playItem)
 
-	def get_play_list_json(self):
+	def get_play_list(self):
 		global gPlayList, gPListLock
 		playList = []
 		with gPListLock:
 			for playItem in gPlayList:
 				if playItem["name"] != "password":
 					playList.append(playItem)
-		return json.dumps(playList)
+		return playList
 
 	def serialize_play_list(self):
 		global gPlayList, gPListLock
@@ -175,86 +203,138 @@ class FileReader(object):
 		playListFp.write(playListJson)
 		playListFp.close()
 
+	def pack_resp(self, tag, isOk, data, desc = "null"):
+		resp	= {}
+		resp["tag"]	= tag
+		resp["result"]	= isOk
+		resp["data"]	= data
+		resp["desc"]	= desc
+		return json.dumps(resp)
+
 	def parse_packet(self, pkt):
-		if self.fileSize == 0:
-			print("Got packet {0}".format(pkt.decode()))
-			playItem	= json.loads(pkt.decode())
+		global gPlayList, gPListLock
 
-			if "cmd" not in playItem.keys() or "password" not in playItem.keys():
-				pkt = "Invalid Input: command or password missing"
-				print(pkt)
-				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
-				return
+		print("Got packet {0}".format(pkt.decode()))
+		playItem	= json.loads(pkt.decode())
 
-			# in case if you forget the password
-			if playItem["cmd"] == "get_password" :
-				print("Sending current password")
-				Utils.send_packet(self.clientIP, self.udp_tx_port, self.password.encode())
+		if playItem["cmd"] == "ping":
+			pkt = self.pack_resp(playItem["cmd"], "success", Utils.get_ip())
+			print("Sending: " + pkt)
+			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
+			return
 
-			if playItem["password"] != self.password:
-				pkt = "Invalid password"
-				print(pkt)
-				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
-				return
+		# in case if you forget the password
+		if playItem["cmd"] == "get_password":
+			pkt = self.pack_resp(playItem["cmd"], "success", self.password)
+			print("Sending: " + pkt)
+			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
+			return
 
-			if playItem["cmd"] == "change_password":
-				self.remove_play_item(playItem["name"])
-				self.password	= playItem["new_password"]
+		if playItem["cmd"] == "sanity":
+			isOk	= "fail"
+			if playItem["password"] == self.password:
+				isOk = "success"
+			pkt = self.pack_resp(playItem["cmd"], isOk, "")
+			print("Sending: sanity : {0}".format(isOk))
+			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
+			return
+
+		if playItem["cmd"] == "change_password":
+			self.remove_play_item_by_id(playItem["id"])
+			self.password	= playItem["new_password"]
+			self.add_play_item(playItem)
+			self.serialize_play_list()
+			pkt = self.pack_resp(playItem["cmd"], "success", playItem["new_password"])
+			print("Sending: " + pkt)
+			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
+			return
+
+		if playItem["cmd"] == "add":
+			desc	= ""
+			isOk	= "fail"
+			data	= ""
+			self.fileSize	= playItem["file_size"]
+			item, self.isNoConflict = self.conflict_check(playItem)
+			if self.isNoConflict:
+				if bool(item):
+					self.delete_play_item(item)
+				if playItem["id"] == -1:
+					self.id		= self.id + 1
+					playItem["id"]	= self.id
 				self.add_play_item(playItem)
 				self.serialize_play_list()
-				pkt = "Password changed successfully"
-				print(pkt)
-				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
+				desc = "Added" if self.fileSize != 0 else "Updated"
+				isOk	= "success"
+				data	= str(playItem["id"])
+			else:
+				desc	= "Conflicts with {0}".format(item["name"])
+				isOk	= "fail"
+			pkt = self.pack_resp(playItem["cmd"], isOk, data, desc)
+			print("Sending: " + pkt)
+			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
+			return
 
-			if playItem["cmd"] == "add":
-				# add - cmd is always followed by a series of packets containing the audio file
-				# so set the following variables eventhough the sanity check fails
-				self.fileSize	= playItem["file_size"]
-				self.fileName	= playItem["file_name"]
-				self.bytesRead	= 0
+		if playItem["cmd"] == "remove":
+			isOk	= "fail"
+			desc	= "Item not found"
+			if self.remove_play_item_by_id(playItem["id"]):
+				self.serialize_play_list()
+				isOk	= "success"
+				desc	= "Deleted"
+			pkt = self.pack_resp(playItem["cmd"], isOk, "", desc)
+			print("Sending: " + pkt)
+			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
+			return
 
-				self.isSanityOk = self.sanity_check(playItem)
-				if self.isSanityOk:
-					self.add_play_item(playItem)
-					self.serialize_play_list()
-					pkt = "added to playlist"
+		if playItem["cmd"] == "get_play_list":
+			pkt = self.pack_resp(playItem["cmd"], "success", self.get_play_list())
+			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
+			return
+
+	def receive_tcp(self):
+		global gPathPrefix
+		TCP_CHUNK 	= 60 * 1024
+		iFileSize	= 0
+		iBytesRead	= 0
+		iFileName	= ""
+		audio_file	= None
+		metaFile	= {}
+
+		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+		server_address = (Utils.get_ip(), int(49500))
+		sock.bind(server_address)
+		sock.listen(1)
+		while True:
+			print("Waiting for client...")
+			connection, client_address = sock.accept()
+			while True:
+				data = connection.recv(TCP_CHUNK)
+				if iFileSize == 0:
+					metaFile = json.loads(data.decode())
+					if bool(metaFile):
+						iFileSize = metaFile["file_size"]
+						iFileName = gPathPrefix + metaFile["file_name"]
+						audio_file = open(iFileName, "wb")
+						print("Got file to add {0}".format(metaFile))
+						connection.send("Done1".encode())
 				else:
-					pkt = "sanity check failed"
-				print(pkt)
-				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
-
-			if playItem["cmd"] == "remove":
-				if self.remove_play_item(playItem["name"]):
-					self.serialize_play_list()
-					pkt = "removed from playlist"
-				else:
-					pkt = "Item '{0}' not found".format(playItem["name"])
-				print(pkt)
-				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
-
-			if playItem["cmd"] == "get_play_list":
-				pkt = self.get_play_list_json()
-				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
-
-			if playItem["cmd"] == "get_ip":
-				pkt = Utils.get_ip()
-				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
-		else:
-			if self.isSanityOk:
-				audio_file	= open(self.fileName, "ab")
-				audio_file.write(pkt)
-				audio_file.close()
-			self.bytesRead	= self.bytesRead + len(pkt)
-			if self.bytesRead >= self.fileSize:
-				self.isSanityOk = False
-				self.fileSize	= 0
-				self.bytesRead	= 0
-				pkt = "got the audio file"
-				print(pkt)
-				Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
-
+					audio_file.write(data)
+					iBytesRead	= iBytesRead + len(data)
+					#print("File size: {0}, Read: {1}, Balance: {2}".format(iFileSize, iBytesRead, iFileSize-iBytesRead))
+					if iBytesRead >= iFileSize:
+						iFileSize	= 0
+						iBytesRead	= 0
+						audio_file.close()
+						connection.send("Done2".encode())
+						sleep(1)
+						connection.close()
+						print("Done reading all bytes")
+						break
+				
 	def receive_packets(self):
 		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 		server_address = ('', int(self.udp_rx_port))
 		sock.bind(server_address)
 
@@ -262,12 +342,13 @@ class FileReader(object):
 			data, address = sock.recvfrom(self.oneChunk)
 			self.clientIP = address[0]
 			self.parse_packet(data)
-			#print("Got pkt from {0}".format(address[0]))
 
 if __name__ == "__main__":
 	file_reader	= FileReader("playlist_file.json")
 	read_thread	= Thread(target = file_reader.receive_packets)
 	read_thread.start()
+	file_thread	= Thread(target = file_reader.receive_tcp)
+	file_thread.start()
 
 	media_player	= Player()
 	play_thread	= Thread(target = media_player.poll_playlist)

@@ -1,5 +1,11 @@
 sgn
 
+Response JSON
+		resp["tag"]	= tag
+		resp["result"]	= "success" or "fail"
+		resp["data"]	= data
+		resp["desc"]	= desc
+
 
 To Change Password
 
