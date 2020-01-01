@@ -13,8 +13,8 @@ import netifaces
 
 gPlayList = []
 gPListLock = RLock()
-#gPathPrefix = "/home/pi/sgn/projs/SGNAudioSignage/"
-gPathPrefix = "/home/tstone10/sgn/smpls/py/SGNAudioSignage/audio/"
+gPathPrefix = "/home/pi/sgn/projs/SGNAudioSignage/audio/"
+#gPathPrefix = "/home/tstone10/sgn/smpls/py/SGNAudioSignage/audio/"
 
 class Utils(object):
 	udp_tx_port = 4952
@@ -50,7 +50,8 @@ class Utils(object):
 
 	@staticmethod
 	def get_ip():
-		pkt = netifaces.ifaddresses('wlp2s0')[2][0]['addr']
+		#pkt = netifaces.ifaddresses('wlp2s0')[2][0]['addr']
+		pkt = netifaces.ifaddresses('wlan0')[2][0]['addr']
 		return pkt
 
 	@staticmethod
@@ -254,6 +255,7 @@ class FileReader(object):
 			isOk	= "fail"
 			data	= ""
 			self.fileSize	= playItem["file_size"]
+			playItem["file_name"] = playItem["file_name"].replace(" ", "_")
 			item, self.isNoConflict = self.conflict_check(playItem)
 			if self.isNoConflict:
 				if bool(item):
@@ -314,6 +316,7 @@ class FileReader(object):
 					metaFile = json.loads(data.decode())
 					if bool(metaFile):
 						iFileSize = metaFile["file_size"]
+						metaFile["file_name"] = metaFile["file_name"].replace(" ", "_")
 						iFileName = gPathPrefix + metaFile["file_name"]
 						audio_file = open(iFileName, "wb")
 						print("Got file to add {0}".format(metaFile))
