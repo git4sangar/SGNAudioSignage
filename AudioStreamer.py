@@ -1,5 +1,6 @@
 #sgn
-
+from omxplayer.player import OMXPlayer
+from pathlib import Path
 import subprocess
 from time import sleep
 import datetime
@@ -13,6 +14,7 @@ import netifaces
 
 gPlayList = []
 gPListLock = RLock()
+gPlaylistPath = "/home/pi/sgn/projs/SGNAudioSignage/"
 gPathPrefix = "/home/pi/sgn/projs/SGNAudioSignage/audio/"
 #gPathPrefix = "/home/tstone10/sgn/smpls/py/SGNAudioSignage/audio/"
 
@@ -71,19 +73,19 @@ class Player(object):
 	def play(self, file_name, duration_mins):
 		global gPathPrefix
 		duration_secs	= duration_mins * 60
-		pid = subprocess.Popen("omxplayer -o local {0}".format(gPathPrefix + file_name))
-		#pid = subprocess.Popen("/home/tstone10/sgn/smpls/py/noend")
+		audio_player	= OMXPlayer(gPathPrefix + file_name)
+		sleep(1)
+		duration_secs = duration_secs - 1
 		while duration_secs > 0:
-			if pid.poll() != None:	# finished playing?, then play again
-				pid = subprocess.Popen("omxplayer -o local {0}".format(gPathPrefix + file_name))
-				#pid = subprocess.Popen("/home/tstone10/sgn/smpls/py/noend")
+			if not audio_player.is_playing():
+				audio_player	= OMXPlayer(gPathPrefix + file_name)
 				print("Play it again as remaining duration is {0} sec(s)".format(duration_secs))
 			sleep(1)
 			duration_secs = duration_secs - 1
 
-		if pid.poll() == None:	# is it still playing, then kill it
+		if audio_player.is_playing():
 			print("killing as duration is elapsed")
-			pid.kill()
+			audio_player.quit()
 
 	def poll_playlist(self):
 		global gPlayList, gPListLock
@@ -112,7 +114,7 @@ class Player(object):
 			sleep(1) #sleep for a second
 
 class FileReader(object):
-	def __init__(self, plist_file_name = "playlist_file.json", udp_file_port = 4950, udp_rx_port = 4953, udp_tx_port = 4952):
+	def __init__(self, plist_file_name = "playlist_file.json", udp_file_port = 49500, udp_rx_port = 4953, udp_tx_port = 4952):
 		global gPlayList, gPListLock
 		self.udp_rx_port	= udp_rx_port
 		self.udp_tx_port	= udp_tx_port
@@ -260,12 +262,12 @@ class FileReader(object):
 			if self.isNoConflict:
 				if bool(item):
 					self.delete_play_item(item)
+				desc = "Added" if playItem["id"] < 0 else "Updated"
 				if playItem["id"] == -1:
 					self.id		= self.id + 1
 					playItem["id"]	= self.id
 				self.add_play_item(playItem)
 				self.serialize_play_list()
-				desc = "Added" if self.fileSize != 0 else "Updated"
 				isOk	= "success"
 				data	= str(playItem["id"])
 			else:
@@ -304,7 +306,7 @@ class FileReader(object):
 
 		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-		server_address = (Utils.get_ip(), int(49500))
+		server_address = (Utils.get_ip(), int(self.udp_file_port))
 		sock.bind(server_address)
 		sock.listen(1)
 		while True:
@@ -347,7 +349,7 @@ class FileReader(object):
 			self.parse_packet(data)
 
 if __name__ == "__main__":
-	file_reader	= FileReader("playlist_file.json")
+	file_reader	= FileReader(gPlaylistPath + "playlist_file.json")
 	read_thread	= Thread(target = file_reader.receive_packets)
 	read_thread.start()
 	file_thread	= Thread(target = file_reader.receive_tcp)
