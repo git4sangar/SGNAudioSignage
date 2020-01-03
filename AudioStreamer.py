@@ -1,5 +1,5 @@
 #sgn
-from omxplayer.player import OMXPlayer
+#from omxplayer.player import OMXPlayer
 from pathlib import Path
 import subprocess
 from time import sleep
@@ -11,12 +11,49 @@ import csv
 import json
 import socket
 import netifaces
+from mutagen.mp3 import MP3
 
 gPlayList = []
 gPListLock = RLock()
-gPlaylistPath = "/home/pi/sgn/projs/SGNAudioSignage/"
-gPathPrefix = "/home/pi/sgn/projs/SGNAudioSignage/audio/"
-#gPathPrefix = "/home/tstone10/sgn/smpls/py/SGNAudioSignage/audio/"
+
+#gPlaylistPath = "/home/pi/sgn/projs/SGNAudioSignage/"
+#gPathPrefix = "/home/pi/sgn/projs/SGNAudioSignage/audio/"
+
+gPlaylistPath = "/home/tstone10/sgn/smpls/py/SGNAudioSignage/"
+gPathPrefix = "/home/tstone10/sgn/smpls/py/SGNAudioSignage/audio/"
+
+#gIFName= "eth0"
+#gIFName= "wlan0"
+#gIFName= "wlp2s0"
+gIFName	= "enp0s31f6"
+
+
+class SignagePlayer(object):
+	def __init__(self, file_name):
+		self.startSecs	= self.get_cur_time_in_secs()
+		audio		= MP3(file_name)
+		self.duration	= int(audio.info.length)
+		#print("Started playing, start secs: {0}, duration: {1}".format(self.startSecs, self.duration))
+
+	def get_cur_time_in_secs(self):
+		curHour		= datetime.datetime.now().hour
+		curMins		= datetime.datetime.now().minute
+		curSecs		= datetime.datetime.now().second
+		return (curHour * 60 * 60) + (curMins * 60) + curSecs
+
+	def is_playing(self):
+		curTime	= self.get_cur_time_in_secs()
+		playEnd	= self.startSecs + self.duration
+		return playEnd > curTime
+
+	def quit(self):
+		#print("startTime: {0}, duration: {1}, curTime: {2}".format(self.startSecs, self.duration, self.get_cur_time_in_secs()))
+		if self.is_playing():
+			print("Force stopped playing")
+		else:
+			print("Finished playing")
+		self.duration	= 0
+		self.bPlaying	= False
 
 class Utils(object):
 	udp_tx_port = 4952
@@ -52,8 +89,8 @@ class Utils(object):
 
 	@staticmethod
 	def get_ip():
-		#pkt = netifaces.ifaddresses('wlp2s0')[2][0]['addr']
-		pkt = netifaces.ifaddresses('wlan0')[2][0]['addr']
+		global gIFName
+		pkt = netifaces.ifaddresses(gIFName)[2][0]['addr']
 		return pkt
 
 	@staticmethod
