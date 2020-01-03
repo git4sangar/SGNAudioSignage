@@ -22,7 +22,7 @@ gPathPrefix	= "/home/pi/sgn/projs/SGNAudioSignage/audio/"
 #gPlaylistPath	= "/home/tstone10/sgn/smpls/py/SGNAudioSignage/"
 #gPathPrefix	= "/home/tstone10/sgn/smpls/py/SGNAudioSignage/audio/"
 
-gNetIfs	= ["eth0", "wlan0", "wlp2s0", "enp0s31f6"]
+gNetIfs	= ["eth0", "wlan0", "enp0s31f6", "wlp2s0"]
 
 class SignagePlayer(object):
 	def __init__(self, file_name):
@@ -91,7 +91,10 @@ class Utils(object):
 				ifDict	= netifaces.ifaddresses(netif)
 				if 2 in ifDict.keys():
 					pkt = ifDict[2][0]['addr']
+					print("choosing interface {0} with ip {1}".format(netif, pkt))
 					break
+				else:
+					print("dictionary-key 2 is not available in interface {0}".format(netif))
 			except ValueError:
 				print("interface {0} is not available".format(netif) )
 		return pkt
