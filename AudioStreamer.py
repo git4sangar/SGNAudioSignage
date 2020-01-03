@@ -1,5 +1,5 @@
 #sgn
-#from omxplayer.player import OMXPlayer
+from omxplayer.player import OMXPlayer
 from pathlib import Path
 import subprocess
 from time import sleep
@@ -56,7 +56,6 @@ class SignagePlayer(object):
 		self.bPlaying	= False
 
 class Utils(object):
-	udp_tx_port = 4952
 	@staticmethod
 	def get_secs(hour, mins, secs):
 		ret = hour * 60 * 60
@@ -77,7 +76,7 @@ class Utils(object):
 	def send_packet(toip, port, pkt):
 		sent	= 0
 		sock_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		dest    = (toip, int(Utils.udp_tx_port))
+		dest    = (toip, int(port))
 		#print("Sending pkt to {0}".format(pkt))
 		try:
 			sent = sock_tx.sendto(pkt, dest)
