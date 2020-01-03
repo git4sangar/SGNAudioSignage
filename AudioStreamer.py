@@ -16,17 +16,13 @@ from mutagen.mp3 import MP3
 gPlayList = []
 gPListLock = RLock()
 
-#gPlaylistPath = "/home/pi/sgn/projs/SGNAudioSignage/"
-#gPathPrefix = "/home/pi/sgn/projs/SGNAudioSignage/audio/"
+gPlaylistPath	= "/home/pi/sgn/projs/SGNAudioSignage/"
+gPathPrefix	= "/home/pi/sgn/projs/SGNAudioSignage/audio/"
 
-gPlaylistPath = "/home/tstone10/sgn/smpls/py/SGNAudioSignage/"
-gPathPrefix = "/home/tstone10/sgn/smpls/py/SGNAudioSignage/audio/"
+#gPlaylistPath	= "/home/tstone10/sgn/smpls/py/SGNAudioSignage/"
+#gPathPrefix	= "/home/tstone10/sgn/smpls/py/SGNAudioSignage/audio/"
 
-#gIFName= "eth0"
-#gIFName= "wlan0"
-#gIFName= "wlp2s0"
-gIFName	= "enp0s31f6"
-
+gNetIfs	= ["eth0", "wlan0", "wlp2s0", "enp0s31f6"]
 
 class SignagePlayer(object):
 	def __init__(self, file_name):
@@ -88,8 +84,16 @@ class Utils(object):
 
 	@staticmethod
 	def get_ip():
-		global gIFName
-		pkt = netifaces.ifaddresses(gIFName)[2][0]['addr']
+		global gNetIfs
+		pkt = " "
+		for netif in gNetIfs:
+			try:
+				ifDict	= netifaces.ifaddresses(netif)
+				if 2 in ifDict.keys():
+					pkt = ifDict[2][0]['addr']
+					break
+			except ValueError:
+				print("interface {0} is not available".format(netif) )
 		return pkt
 
 	@staticmethod
