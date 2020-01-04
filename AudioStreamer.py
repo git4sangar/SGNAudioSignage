@@ -23,6 +23,7 @@ gPathPrefix	= "/home/pi/sgn/projs/SGNAudioSignage/audio/"
 #gPathPrefix	= "/home/tstone10/sgn/smpls/py/SGNAudioSignage/audio/"
 
 gNetIfs	= ["eth0", "wlan0", "enp0s31f6", "wlp2s0"]
+gMAX_PLAYLIST_SIZE	= 101
 
 class SignagePlayer(object):
 	def __init__(self, file_name):
@@ -140,6 +141,7 @@ class Player(object):
 					if len(gPlayList) <= loop:		# is loop pointing to non-existent index?
 						loop = 0			# if so, start from scratch
 					playItem = gPlayList[loop]
+					loop = loop + 1
 
 			# Password is serialized for "cmd" == "change_password". so skip if the "cmd" is not "add"
 			if playItem and playItem["cmd"] == "add":
@@ -153,7 +155,6 @@ class Player(object):
 					#print("playing {0} for duration {1}".format(playItem["file_name"], playItem["duration"]))
 				playItem = {}	# who knows, this palyItem would've been removed by this time. so make it empty
 
-			loop = loop + 1
 			sleep(1) #sleep for a second
 
 class FileReader(object):
@@ -204,15 +205,16 @@ class FileReader(object):
 					break
 		return isRemoved
 
-	def conflict_check(self, playItem):
+	# Check if the given play item conflicts with existing items' time
+	def is_no_conflict(self, playItem):
 		global gPlayList, gPListLock
 		toRemove = {}
 		with gPListLock:
 			for item in gPlayList:
 				if item["name"] == "password":
 					continue
-				if item["id"] == playItem["id"]:
-					toRemove = item
+				if item["id"] == playItem["id"]:# Skip checking with same item
+					toRemove = item		# Remove it & update new time
 					continue
 
 				if item["name"] == playItem["name"]:
@@ -221,15 +223,21 @@ class FileReader(object):
 				t1End	= t1Start + Utils.get_secs(0, playItem["duration"], 0)
 
 				t2Start = Utils.get_secs(item["hour"], item["min"], 0)
-				t2End	= Utils.get_secs(0, item["duration"], 0)
+				t2End	= t2Start + Utils.get_secs(0, item["duration"], 0)
 				if Utils.is_overlapped(t1Start, t1End, t2Start, t2End):
 					return item, False
 		return toRemove, True
 
 	def add_play_item(self, playItem):
-		global gPlayList, gPListLock
+		global gPlayList, gPListLock, gMAX_PLAYLIST_SIZE
+		size_of_playlist = 0
 		with gPListLock:
+			size_of_playlist = len(gPlayList)
+			if size_of_playlist >= gMAX_PLAYLIST_SIZE:
+				return False, size_of_playlist
 			gPlayList.append(playItem)
+			size_of_playlist = size_of_playlist + 1
+		return True, size_of_playlist
 
 	def get_play_list(self):
 		global gPlayList, gPListLock
@@ -258,7 +266,7 @@ class FileReader(object):
 		return json.dumps(resp)
 
 	def parse_packet(self, pkt):
-		global gPlayList, gPListLock
+		global gPlayList, gPListLock, gMAX_PLAYLIST_SIZE
 
 		print("Got packet {0}".format(pkt.decode()))
 		playItem	= json.loads(pkt.decode())
@@ -299,20 +307,31 @@ class FileReader(object):
 			desc	= ""
 			isOk	= "fail"
 			data	= ""
+			size_of_playlist = 0
+			isAdded	= False
 			self.fileSize	= playItem["file_size"]
 			playItem["file_name"] = playItem["file_name"].replace(" ", "_")
-			item, self.isNoConflict = self.conflict_check(playItem)
+			item, self.isNoConflict = self.is_no_conflict(playItem)
 			if self.isNoConflict:
-				if bool(item):
+				if bool(item):	# Remove the existing entry & add the same with new time
 					self.delete_play_item(item)
-				desc = "Added" if playItem["id"] < 0 else "Updated"
 				if playItem["id"] == -1:
-					self.id		= self.id + 1
-					playItem["id"]	= self.id
-				self.add_play_item(playItem)
-				self.serialize_play_list()
-				isOk	= "success"
-				data	= str(playItem["id"])
+					playItem["id"]	= self.id + 1
+					desc	= "Added"
+				else:
+					desc	= "Updated"
+				isAdded, size_of_playlist = self.add_play_item(playItem)
+				if isAdded:
+					self.serialize_play_list()
+					if desc	== "Added":
+						self.id	= self.id + 1
+					isOk	= "success"
+					data	= str(playItem["id"])
+					if size_of_playlist == gMAX_PLAYLIST_SIZE:
+						desc	+= ". Warning: Max size reached"
+				else:
+					desc	= "Not added. Max size reached"
+					isOk	= "fail"
 			else:
 				desc	= "Conflicts with {0}".format(item["name"])
 				isOk	= "fail"
