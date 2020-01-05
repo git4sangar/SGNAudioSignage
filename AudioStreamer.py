@@ -12,6 +12,7 @@ import json
 import socket
 import netifaces
 from mutagen.mp3 import MP3
+import logging
 
 gPlayList = []
 gPListLock = RLock()
@@ -45,10 +46,6 @@ class SignagePlayer(object):
 
 	def quit(self):
 		#print("startTime: {0}, duration: {1}, curTime: {2}".format(self.startSecs, self.duration, self.get_cur_time_in_secs()))
-		if self.is_playing():
-			print("Force stopped playing")
-		else:
-			print("Finished playing")
 		self.duration	= 0
 		self.bPlaying	= False
 
@@ -92,12 +89,11 @@ class Utils(object):
 				ifDict	= netifaces.ifaddresses(netif)
 				if 2 in ifDict.keys():
 					pkt = ifDict[2][0]['addr']
-					print("choosing interface {0} with ip {1}".format(netif, pkt))
+					#print("choosing interface {0} with ip {1}".format(netif, pkt))
 					break
-				else:
-					print("dictionary-key 2 is not available in interface {0}".format(netif))
 			except ValueError:
-				print("interface {0} is not available".format(netif) )
+				#print("interface {0} is not available".format(netif) )
+				pass
 		return pkt
 
 	@staticmethod
@@ -114,6 +110,9 @@ class Utils(object):
 		return IP
 
 class Player(object):
+	def __init__(self):
+		self.my_logger	= logging.getLogger('Player')
+
 	def play(self, file_name, duration_mins):
 		global gPathPrefix
 		duration_secs	= duration_mins * 60
@@ -123,12 +122,12 @@ class Player(object):
 		while duration_secs > 0:
 			if not audio_player.is_playing():
 				audio_player	= OMXPlayer(gPathPrefix + file_name)
-				print("Play it again as remaining duration is {0} sec(s)".format(duration_secs))
+				self.my_logger.info("Play it again as remaining duration is {0} sec(s)".format(duration_secs))
 			sleep(1)
 			duration_secs = duration_secs - 1
 
 		if audio_player.is_playing():
-			print("killing as duration is elapsed")
+			self.my_logger.info("killing as duration is elapsed")
 			audio_player.quit()
 
 	def poll_playlist(self):
@@ -158,11 +157,11 @@ class Player(object):
 			sleep(1) #sleep for a second
 
 class FileReader(object):
-	def __init__(self, plist_file_name = "playlist_file.json", udp_file_port = 49500, udp_rx_port = 4953, udp_tx_port = 4952):
+	def __init__(self, plist_file_name = "playlist_file.json", tcp_file_port = 49500, udp_rx_port = 4953, udp_tx_port = 4952):
 		global gPlayList, gPListLock
 		self.udp_rx_port	= udp_rx_port
 		self.udp_tx_port	= udp_tx_port
-		self.udp_file_port	= udp_file_port
+		self.tcp_file_port	= tcp_file_port
 		self.plist_file_name	= plist_file_name
 		self.fileSize		= 0
 		self.isNoConflict	= False
@@ -170,6 +169,7 @@ class FileReader(object):
 		self.password		= "GuruGuha"
 		self.id			= 0
 		self.oneChunk		= 1024 * 16	#max UDP payload is 16K
+		self.my_logger		= logging.getLogger('FReader')
 
 		#	Deserialize
 		try:
@@ -177,7 +177,7 @@ class FileReader(object):
 			playListJson	= playListFp.read()
 			playListFp.close()
 			if len(playListJson) > 0:
-				print("Playlist till now {0}" .format(playListJson))
+				self.my_logger.info("Playlist till now {0}" .format(playListJson))
 				with gPListLock:
 					gPlayList	= json.loads(playListJson)
 					for playItem in gPlayList:
@@ -186,7 +186,7 @@ class FileReader(object):
 						if playItem["id"] > self.id:
 							self.id = playItem["id"]
 		except IOError:
-			print("Could not open Playlist file")
+			self.my_logger.info("Could not open Playlist file")
 
 	def delete_play_item(self, playItem):
 		global gPlayList, gPListLock
@@ -268,19 +268,19 @@ class FileReader(object):
 	def parse_packet(self, pkt):
 		global gPlayList, gPListLock, gMAX_PLAYLIST_SIZE
 
-		print("Got packet {0}".format(pkt.decode()))
+		self.my_logger.info("Got packet {0}".format(pkt.decode()))
 		playItem	= json.loads(pkt.decode())
 
 		if playItem["cmd"] == "ping":
 			pkt = self.pack_resp(playItem["cmd"], "success", Utils.get_ip())
-			print("Sending: " + pkt)
+			self.my_logger.info("Sending: " + pkt)
 			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
 			return
 
 		# in case if you forget the password
 		if playItem["cmd"] == "get_password":
 			pkt = self.pack_resp(playItem["cmd"], "success", self.password)
-			print("Sending: " + pkt)
+			self.my_logger.info("Sending: " + pkt)
 			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
 			return
 
@@ -289,7 +289,7 @@ class FileReader(object):
 			if playItem["password"] == self.password:
 				isOk = "success"
 			pkt = self.pack_resp(playItem["cmd"], isOk, "")
-			print("Sending: sanity : {0}".format(isOk))
+			self.my_logger.info("Sending: sanity : {0}".format(isOk))
 			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
 			return
 
@@ -299,7 +299,7 @@ class FileReader(object):
 			self.add_play_item(playItem)
 			self.serialize_play_list()
 			pkt = self.pack_resp(playItem["cmd"], "success", playItem["new_password"])
-			print("Sending: " + pkt)
+			self.my_logger.info("Sending: " + pkt)
 			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
 			return
 
@@ -336,7 +336,7 @@ class FileReader(object):
 				desc	= "Conflicts with {0}".format(item["name"])
 				isOk	= "fail"
 			pkt = self.pack_resp(playItem["cmd"], isOk, data, desc)
-			print("Sending: " + pkt)
+			self.my_logger.info("Sending: " + pkt)
 			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
 			return
 
@@ -348,12 +348,13 @@ class FileReader(object):
 				isOk	= "success"
 				desc	= "Deleted"
 			pkt = self.pack_resp(playItem["cmd"], isOk, "", desc)
-			print("Sending: " + pkt)
+			self.my_logger.info("Sending: " + pkt)
 			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
 			return
 
 		if playItem["cmd"] == "get_play_list":
 			pkt = self.pack_resp(playItem["cmd"], "success", self.get_play_list())
+			self.my_logger.info("Sending: " + pkt)
 			Utils.send_packet(self.clientIP, self.udp_tx_port, pkt.encode())
 			return
 
@@ -368,11 +369,11 @@ class FileReader(object):
 
 		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-		server_address = (Utils.get_ip(), int(self.udp_file_port))
+		server_address = (Utils.get_ip(), int(self.tcp_file_port)) # connect to IP instead of localhost to avoid connection refusal
 		sock.bind(server_address)
 		sock.listen(1)
 		while True:
-			print("Waiting for client...")
+			self.my_logger.info("Waiting for client...")
 			connection, client_address = sock.accept()
 			while True:
 				data = connection.recv(TCP_CHUNK)
@@ -383,12 +384,12 @@ class FileReader(object):
 						metaFile["file_name"] = metaFile["file_name"].replace(" ", "_")
 						iFileName = gPathPrefix + metaFile["file_name"]
 						audio_file = open(iFileName, "wb")
-						print("Got file to add {0}".format(metaFile))
+						self.my_logger.info("Got file to add {0}".format(metaFile))
 						connection.send("Done1".encode())
 				else:
 					audio_file.write(data)
 					iBytesRead	= iBytesRead + len(data)
-					#print("File size: {0}, Read: {1}, Balance: {2}".format(iFileSize, iBytesRead, iFileSize-iBytesRead))
+					#self.my_logger.info("File size: {0}, Read: {1}, Balance: {2}".format(iFileSize, iBytesRead, iFileSize-iBytesRead))
 					if iBytesRead >= iFileSize:
 						iFileSize	= 0
 						iBytesRead	= 0
@@ -396,7 +397,7 @@ class FileReader(object):
 						connection.send("Done2".encode())
 						sleep(1)
 						connection.close()
-						print("Done reading all bytes")
+						self.my_logger.info("Done reading all bytes")
 						break
 				
 	def receive_packets(self):
@@ -410,13 +411,31 @@ class FileReader(object):
 			self.clientIP = address[0]
 			self.parse_packet(data)
 
+def setup_logging(logfile):
+	root_logger = logging.getLogger('')
+	root_logger.setLevel(logging.DEBUG)
+
+	formatter = logging.Formatter('%(asctime)s %(name)s %(levelname)s %(message)s')
+	fh = logging.FileHandler(logfile)
+	fh.setLevel(logging.DEBUG)
+	fh.setFormatter(formatter)
+	root_logger.addHandler(fh)
+
 if __name__ == "__main__":
+	sleep(60)	# let all network interfaces start and settle for tcp sock to bind
+	setup_logging(gPlaylistPath + "log_file.txt")
+	main_logger = logging.getLogger('MAIN')
+
 	file_reader	= FileReader(gPlaylistPath + "playlist_file.json")
 	read_thread	= Thread(target = file_reader.receive_packets)
 	read_thread.start()
+	main_logger.info("File reader started")
+
 	file_thread	= Thread(target = file_reader.receive_tcp)
 	file_thread.start()
+	main_logger.info("TCP reader started")
 
 	media_player	= Player()
 	play_thread	= Thread(target = media_player.poll_playlist)
 	play_thread.start()
+	main_logger.info("Poll playlist started")
