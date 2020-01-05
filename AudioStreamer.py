@@ -423,7 +423,7 @@ def setup_logging(logfile):
 
 	formatter = logging.Formatter('%(asctime)s %(name)s %(levelname)s %(message)s')
 	fh = logging.FileHandler(logfile)
-	fh.setLevel(logging.DEBUG)
+	fh.setLevel(logging.INFO)
 	fh.setFormatter(formatter)
 	root_logger.addHandler(fh)
 
