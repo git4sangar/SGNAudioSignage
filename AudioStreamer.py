@@ -2,7 +2,7 @@
 from omxplayer.player import OMXPlayer
 from pathlib import Path
 import subprocess
-from time import sleep
+from time import sleep, time, localtime
 import datetime
 import os.path
 from os import path
@@ -56,6 +56,12 @@ class Utils(object):
 		ret = ret + (mins * 60)
 		ret = ret + secs
 		return ret
+
+	@staticmethod
+	def get_current_time_string():
+		t = localtime()
+		time_string = "{}_{:02d}_{:02d}-{:02d}_{:02d}_{:02d}".format(t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec)
+		return time_string
 
 	@staticmethod
 	def is_overlapped(t1Start, t1End, t2Start, t2End):
@@ -423,7 +429,7 @@ def setup_logging(logfile):
 
 if __name__ == "__main__":
 	sleep(60)	# let all network interfaces start and settle for tcp sock to bind
-	setup_logging(gPlaylistPath + "log_file.txt")
+	setup_logging(gPlaylistPath + "log_file_" + Utils.get_current_time_string() + ".txt")
 	main_logger = logging.getLogger('MAIN')
 
 	file_reader	= FileReader(gPlaylistPath + "playlist_file.json")
