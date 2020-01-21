@@ -1,0 +1,6 @@
+sgn
+
+is_playing query is failing when audio is stopped playing
+all user permission required for playlist_file & audios
+formats other than mp3 needs to be tested
+android app crashes on python crash handle exception
