@@ -44,6 +44,10 @@ class SignagePlayer(object):
 		playEnd	= self.startSecs + self.duration
 		return playEnd > curTime
 
+	def stop(self):
+		self.duration	= 0
+		self.bPlaying	= False
+
 	def quit(self):
 		#print("startTime: {0}, duration: {1}, curTime: {2}".format(self.startSecs, self.duration, self.get_cur_time_in_secs()))
 		self.duration	= 0
@@ -56,6 +60,13 @@ class Utils(object):
 		ret = ret + (mins * 60)
 		ret = ret + secs
 		return ret
+
+	@staticmethod
+	def get_cur_time_in_secs():
+		curHour		= datetime.datetime.now().hour
+		curMins		= datetime.datetime.now().minute
+		curSecs		= datetime.datetime.now().second
+		return (curHour * 60 * 60) + (curMins * 60) + curSecs
 
 	@staticmethod
 	def get_current_time_string():
@@ -81,7 +92,7 @@ class Utils(object):
 		try:
 			sent = sock_tx.sendto(pkt, dest)
 		except socket.error as e:
-			print (os.strerror(e.errno))
+			self.my_logger.info(os.strerror(e.errno))
 		finally:
 			sock_tx.close()
 		return sent
@@ -102,39 +113,23 @@ class Utils(object):
 				pass
 		return pkt
 
-	@staticmethod
-	def get_ip_obsolete():
-		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		try:
-			# doesn't even have to be reachable
-			s.connect(('10.255.255.255', 1))
-			IP = s.getsockname()[0]
-		except:
-			IP = '127.0.0.1'
-		finally:
-			s.close()
-		return IP
-
 class Player(object):
 	def __init__(self):
 		self.my_logger	= logging.getLogger('Player')
 
-	def play(self, file_name, duration_mins):
+	def play(self, file_name, duration_secs):
 		global gPathPrefix
-		duration_secs	= duration_mins * 60
-		audio_player	= OMXPlayer(gPathPrefix + file_name)
-		sleep(1)
-		duration_secs = duration_secs - 1
+		self.my_logger.info("Got file {0} to play for {1} secs".format(file_name, duration_secs))
+		duration_secs	= duration_secs + 1	# it takes about a sec to start
+        	# Just start omxplayer to play in loop
+		audio_player	= OMXPlayer(gPathPrefix + file_name, args=['--loop'])
 		while duration_secs > 0:
-			if not audio_player.is_playing():
-				audio_player	= OMXPlayer(gPathPrefix + file_name)
-				self.my_logger.info("Play it again as remaining duration is {0} sec(s)".format(duration_secs))
 			sleep(1)
 			duration_secs = duration_secs - 1
 
-		if audio_player.is_playing():
-			self.my_logger.info("killing as duration is elapsed")
-			audio_player.quit()
+		# after first iteration of playing, audio_player is not valid. So just kill omxplayer
+		self.my_logger.info("killing as duration is elapsed")
+		subprocess.call(['killall','-9','omxplayer.bin'])
 
 	def poll_playlist(self):
 		global gPlayList, gPListLock
@@ -151,13 +146,14 @@ class Player(object):
 			# Password is serialized for "cmd" == "change_password". so skip if the "cmd" is not "add"
 			if playItem and playItem["cmd"] == "add":
 				#Check if right time to play
-				playTime	= datetime.time(playItem["hour"], playItem["min"], 0)
-				curHour		= datetime.datetime.now().hour
-				curMins		= datetime.datetime.now().minute
-				curTime		= datetime.time(curHour, curMins, 0)
-				if playTime == curTime:
-					self.play(playItem["file_name"], playItem["duration"])
-					#print("playing {0} for duration {1}".format(playItem["file_name"], playItem["duration"]))
+				playTime	= Utils.get_secs(playItem["hour"], playItem["min"], 0)
+				duration	= Utils.get_secs(0, playItem["duration"], 0)
+				curTime		= Utils.get_cur_time_in_secs()
+				#self.my_logger.info("playTime: {0}, duration: {1}, curTime: {2}".format(playTime, duration, curTime))
+				if playTime <= curTime and (playTime + duration) > curTime:
+					self.my_logger.info("Invoking player {0} for duration {1}".format(playItem["file_name"], playItem["duration"]))
+					duration = (playTime + duration) - curTime
+					self.play(playItem["file_name"], duration)
 				playItem = {}	# who knows, this palyItem would've been removed by this time. so make it empty
 
 			sleep(1) #sleep for a second
@@ -430,6 +426,7 @@ def setup_logging(logfile):
 if __name__ == "__main__":
 	sleep(60)	# let all network interfaces start and settle for tcp sock to bind
 	setup_logging(gPlaylistPath + "log_file_" + Utils.get_current_time_string() + ".txt")
+	#setup_logging(gPlaylistPath + "log_file.txt")
 	main_logger = logging.getLogger('MAIN')
 
 	file_reader	= FileReader(gPlaylistPath + "playlist_file.json")
