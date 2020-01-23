@@ -70,3 +70,27 @@ You can then verify it with sudo hwclock -r
 	pi@raspberrypi:~ $ sudo hwclock -r
 	2020-01-23 22:16:48.099352+05:30
 
+So, now the RTC clock is set, is that it? Well, no.
+The next time you boot your Pi, it will not know that it needs to read the clock from the RTC, so if it is not connected to the internet it will again be showing the wrong time.
+
+Making Your Raspberry Pi Use the Real Time Clock
+
+You will need to add the RTC kernel module to the file /etc/modules so it is loaded when the Raspberry Pi boots.
+In a terminal window run sudo nano /etc/modules and add rtc-ds1307 at the end of the file:
+
+Next you will need to add the DS1307 device creation at boot by editing the /etc/rc.local file by running
+and add the following lines to the file:
+
+	echo ds1307 0x68 > /sys/class/i2c-adapter/i2c-1/new_device
+	sudo hwclock -s
+	date
+
+Just before the exit 0. Note: If you have a Rev 1 Raspberry Pi, replace i2c-1 by i2c-0 above.
+To save the file, press Ctrl+X, Y then return.
+
+To test this out, shutdown your Raspberry Pi, unplug any ethernet cable or wifi dongle and then turn the Raspberry Pi back on. Use the following command in a terminal window to check the date is still set:
+
+	date
+
+Now, the next time you reboot your Raspberry Pi it will read the time from the Real Time Clock.
+
