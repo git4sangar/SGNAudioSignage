@@ -1,0 +1,72 @@
+sgn
+
+https://thepihut.com/blogs/raspberry-pi-tutorials/17209332-adding-a-real-time-clock-to-your-raspberry-pi
+
+Settiup the I2c based RTC chip DS3231 on Raspberry pi
+
+First enable the I2C in RPi using "sudo raspi-config => Interfacing options => i2c => enable"
+Now install a few i2c tools
+	pi@raspberrypi:~ $ sudo apt-get install i2c-tools
+
+Plug in RTC to RPi as follows
+	Hold the RPi facing camera-interface top
+	plugin the RTC in the inner top right corner of GPIO pins
+	RTC looks L shaped. Plugin in such a way that it looks like 7
+	Refer the pic in web-site
+
+Setting up the RTC
+You now need to configure your Raspberry Pi to recognise and use the board.
+
+Turn on the Raspberry Pi and verify that the board is seen by running sudo i2cdetect -y 1 at the command line.
+You should see ID #68 show up (the I2C address of the DS1307 Real Time Clock chip):
+
+	pi@raspberrypi:~ $ sudo i2cdetect -y 1
+	     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+	00:          -- -- -- -- -- -- -- -- -- -- -- -- -- 
+	10: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+	20: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+	30: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+	40: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+	50: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+	60: -- -- -- -- -- -- -- -- 68 -- -- -- -- -- -- -- 
+	70: -- -- -- -- -- -- -- --                         
+
+If you have an older Rev. 1 Raspberry Pi, you will have to run sudo i2cdetect -y 0 as the I2C bus address changed from 0 to 1 from rev 2 onwards
+
+Setting the RTC Clock
+The RTC module must be loaded by the kernel by running:
+
+
+	pi@raspberrypi:~ $ sudo modprobe rtc-ds1307
+	pi@raspberrypi:~ $ sudo bash
+
+and then, if you have a Rev.2 Raspberry Pi or later:
+
+	root@raspberrypi:/home/pi# echo ds1307 0x68 > /sys/class/i2c-adapter/i2c-1/new_device
+
+Or if you have the older Rev.1 Raspberry Pi, use:
+
+	echo ds1307 0x68 > /sys/class/i2c-adapter/i2c-0/new_device
+
+Type exit to stop being the 'root' user.
+Check the time on the RTC device using
+
+	root@raspberrypi:/home/pi# exit
+	exit
+
+	pi@raspberrypi:~ $ sudo hwclock -r
+	2000-01-01 05:44:54.290467+05:30
+
+If this is the first time the module has been used, it will report back Jan 1 2000, and you'll need to set the time to the current time.
+The easiest way is to connect it up to Ethernet or Wifi. It will automatically set the time from the network. You can check the time using the date command:
+
+
+	pi@raspberrypi:~ $ date
+	Thu 23 Jan 22:15:48 IST 2020
+
+Run sudo hwclock -w to write the system time to the RTC board.
+You can then verify it with sudo hwclock -r
+	pi@raspberrypi:~ $ sudo hwclock -w
+	pi@raspberrypi:~ $ sudo hwclock -r
+	2020-01-23 22:16:48.099352+05:30
+

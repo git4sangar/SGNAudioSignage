@@ -122,7 +122,7 @@ class Player(object):
 		self.my_logger.info("Got file {0} to play for {1} secs".format(file_name, duration_secs))
 		duration_secs	= duration_secs + 1	# it takes about a sec to start
         	# Just start omxplayer to play in loop
-		audio_player	= OMXPlayer(gPathPrefix + file_name, args=['--loop'])
+		audio_player	= OMXPlayer(gPathPrefix + file_name, args=['--loop', '-o', 'local'])
 		while duration_secs > 0:
 			sleep(1)
 			duration_secs = duration_secs - 1
